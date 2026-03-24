@@ -17,9 +17,7 @@ from __future__ import annotations
 import os
 
 import httpx
-from contextlib import asynccontextmanager
-
-from fastmcp import FastMCP, Context
+from fastmcp import FastMCP
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -31,16 +29,11 @@ RAKUTEN_AFFILIATE_ID = os.environ.get("RAKUTEN_AFFILIATE_ID", "")
 
 BASE_URL = "https://openapi.rakuten.co.jp/engine/api/Travel"
 
+_http_client = httpx.AsyncClient(timeout=30.0)
+
 # ---------------------------------------------------------------------------
-# Lifespan – shared httpx client
+# Server
 # ---------------------------------------------------------------------------
-
-
-@asynccontextmanager
-async def app_lifespan(server: FastMCP):
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        yield {"http_client": client}
-
 
 mcp = FastMCP(
     name="Rakuten Travel",
@@ -54,7 +47,6 @@ mcp = FastMCP(
         "Use search_vacant_hotels to check real-time availability for specific dates. "
         "Translate Japanese hotel names, descriptions, and reviews for the user."
     ),
-    lifespan=app_lifespan,
 )
 
 # ---------------------------------------------------------------------------
@@ -62,10 +54,8 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 
 
-async def _call_api(ctx: Context, endpoint: str, params: dict) -> dict:
+async def _call_api(endpoint: str, params: dict) -> dict:
     """Call a Rakuten Travel API endpoint and return the parsed JSON."""
-    client: httpx.AsyncClient = ctx.lifespan_context["http_client"]
-
     params["applicationId"] = RAKUTEN_APP_ID
     params["accessKey"] = RAKUTEN_ACCESS_KEY
     params["format"] = "json"
@@ -78,7 +68,7 @@ async def _call_api(ctx: Context, endpoint: str, params: dict) -> dict:
     params = {k: v for k, v in params.items() if v is not None}
 
     url = f"{BASE_URL}/{endpoint}"
-    resp = await client.get(url, params=params)
+    resp = await _http_client.get(url, params=params)
 
     # Return Rakuten's own error JSON when available, otherwise raise
     if resp.status_code >= 400:
@@ -106,7 +96,6 @@ async def _call_api(ctx: Context, endpoint: str, params: dict) -> dict:
 
 @mcp.tool
 async def search_hotels(
-    ctx: Context,
     latitude: float | None = None,
     longitude: float | None = None,
     search_radius: float | None = None,
@@ -163,7 +152,7 @@ async def search_hotels(
         "hits": hits,
         "responseType": response_type,
     }
-    return await _call_api(ctx, "SimpleHotelSearch/20170426", params)
+    return await _call_api("SimpleHotelSearch/20170426", params)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +162,6 @@ async def search_hotels(
 
 @mcp.tool
 async def get_hotel_detail(
-    ctx: Context,
     hotel_no: int,
     response_type: str = "large",
 ) -> dict:
@@ -191,7 +179,7 @@ async def get_hotel_detail(
         "hotelNo": hotel_no,
         "responseType": response_type,
     }
-    return await _call_api(ctx, "HotelDetailSearch/20170426", params)
+    return await _call_api("HotelDetailSearch/20170426", params)
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +189,6 @@ async def get_hotel_detail(
 
 @mcp.tool
 async def search_vacant_hotels(
-    ctx: Context,
     checkin_date: str,
     checkout_date: str,
     adult_num: int = 1,
@@ -293,7 +280,7 @@ async def search_vacant_hotels(
         "infantWithBNum": infant_with_b_num,
         "infantWithoutMBNum": infant_without_mb_num,
     }
-    return await _call_api(ctx, "VacantHotelSearch/20170426", params)
+    return await _call_api("VacantHotelSearch/20170426", params)
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +289,7 @@ async def search_vacant_hotels(
 
 
 @mcp.tool
-async def get_area_classes(ctx: Context) -> dict:
+async def get_area_classes() -> dict:
     """Get the full Rakuten Travel area-code hierarchy for Japan.
 
     Returns a tree: large (country) → middle (prefecture) → small (city/area)
@@ -313,7 +300,7 @@ async def get_area_classes(ctx: Context) -> dict:
 
     No input parameters required.
     """
-    return await _call_api(ctx, "GetAreaClass/20140210", {})
+    return await _call_api("GetAreaClass/20140210", {})
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +310,6 @@ async def get_area_classes(ctx: Context) -> dict:
 
 @mcp.tool
 async def search_hotels_by_keyword(
-    ctx: Context,
     keyword: str,
     middle_class_code: str | None = None,
     hotel_chain_code: str | None = None,
@@ -364,7 +350,7 @@ async def search_hotels_by_keyword(
         "hits": hits,
         "responseType": response_type,
     }
-    return await _call_api(ctx, "KeywordHotelSearch/20170426", params)
+    return await _call_api("KeywordHotelSearch/20170426", params)
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +359,7 @@ async def search_hotels_by_keyword(
 
 
 @mcp.tool
-async def get_hotel_chain_list(ctx: Context) -> dict:
+async def get_hotel_chain_list() -> dict:
     """Get the list of all hotel chain codes on Rakuten Travel.
 
     Returns chain codes (e.g. "JL", "NK"), names, kana names, and descriptions.
@@ -381,7 +367,7 @@ async def get_hotel_chain_list(ctx: Context) -> dict:
 
     No input parameters required.
     """
-    return await _call_api(ctx, "GetHotelChainList/20131024", {})
+    return await _call_api("GetHotelChainList/20131024", {})
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +377,6 @@ async def get_hotel_chain_list(ctx: Context) -> dict:
 
 @mcp.tool
 async def get_hotel_ranking(
-    ctx: Context,
     genre: str = "all",
 ) -> dict:
     """Get the Rakuten Travel hotel ranking (top 10).
@@ -408,7 +393,7 @@ async def get_hotel_ranking(
     params: dict = {
         "genre": genre,
     }
-    return await _call_api(ctx, "HotelRanking/20170426", params)
+    return await _call_api("HotelRanking/20170426", params)
 
 
 # ---------------------------------------------------------------------------
