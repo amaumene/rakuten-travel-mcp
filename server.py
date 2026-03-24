@@ -17,8 +17,9 @@ from __future__ import annotations
 import os
 
 import httpx
+from contextlib import asynccontextmanager
+
 from fastmcp import FastMCP, Context
-from fastmcp.server.lifespan import lifespan
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -35,7 +36,7 @@ BASE_URL = "https://openapi.rakuten.co.jp/engine/api/Travel"
 # ---------------------------------------------------------------------------
 
 
-@lifespan
+@asynccontextmanager
 async def app_lifespan(server: FastMCP):
     async with httpx.AsyncClient(timeout=30.0) as client:
         yield {"http_client": client}
